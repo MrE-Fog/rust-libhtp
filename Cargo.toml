@@ -1,0 +1,16 @@
+[package]
+name = "libhtp"
+version = "0.5.35"
+description = "FFI bindings to libhtp"
+edition = "2018"
+license = "BSD-3-Clause"
+build = "build.rs"
+authors = ["The OISF/Suricata Development Team"]
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+fs_extra = "1.1.0"
+walkdir = "2"
+filetime = "0.2"
