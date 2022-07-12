@@ -132,12 +132,12 @@ htp_status_t htp_connp_res_receiver_finalize_clear(htp_connp_t *connp) {
  * @return HTP_OK, or a value returned from a callback.
  */
 static htp_status_t htp_connp_res_receiver_set(htp_connp_t *connp, htp_hook_t *data_receiver_hook) {
-    htp_connp_res_receiver_finalize_clear(connp);
+    htp_status_t rc = htp_connp_res_receiver_finalize_clear(connp);
 
     connp->out_data_receiver_hook = data_receiver_hook;
     connp->out_current_receiver_offset = connp->out_current_read_offset;
 
-    return HTP_OK;
+    return rc;
 }
 
 /**
@@ -418,8 +418,10 @@ htp_status_t htp_connp_RES_BODY_CHUNKED_LENGTH(htp_connp_t *connp) {
             connp->out_chunked_length = htp_parse_chunked_length(data, len);
 
             // empty chunk length line, lets try to continue
-            if (connp->out_chunked_length == -1004)
+            if (connp->out_chunked_length == -1004) {
+                connp->out_current_consume_offset = connp->out_current_read_offset;
                 continue;
+            }
             if (connp->out_chunked_length < 0) {
                 // reset out_current_read_offset so htp_connp_RES_BODY_IDENTITY_STREAM_CLOSE
                 // doesn't miss the first bytes
@@ -601,29 +603,37 @@ htp_status_t htp_connp_RES_BODY_DETERMINE(htp_connp_t *connp) {
     }
 
     // Check for an interim "100 Continue" response. Ignore it if found, and revert back to RES_LINE.
-    if (connp->out_tx->response_status_number == 100 && te == NULL && cl == NULL) {
-        if (connp->out_tx->seen_100continue != 0) {
-            htp_log(connp, HTP_LOG_MARK, HTP_LOG_ERROR, 0, "Already seen 100-Continue.");
-            return HTP_ERROR;
+    if (connp->out_tx->response_status_number == 100 && te == NULL) {
+        int is100continue = 1;
+        if (cl != NULL){
+            if (htp_parse_content_length(cl->value, connp) > 0) {
+                is100continue = 0;
+            }
         }
+        if (is100continue) {
+            if (connp->out_tx->seen_100continue != 0) {
+                htp_log(connp, HTP_LOG_MARK, HTP_LOG_ERROR, 0, "Already seen 100-Continue.");
+                return HTP_ERROR;
+            }
 
-        // Ignore any response headers seen so far.
-        htp_header_t *h = NULL;
-        for (size_t i = 0, n = htp_table_size(connp->out_tx->response_headers); i < n; i++) {
-            h = htp_table_get_index(connp->out_tx->response_headers, i, NULL);
-            bstr_free(h->name);
-            bstr_free(h->value);
-            free(h);
+            // Ignore any response headers seen so far.
+            htp_header_t *h = NULL;
+            for (size_t i = 0, n = htp_table_size(connp->out_tx->response_headers); i < n; i++) {
+                h = htp_table_get_index(connp->out_tx->response_headers, i, NULL);
+                bstr_free(h->name);
+                bstr_free(h->value);
+                free(h);
+            }
+
+            htp_table_clear(connp->out_tx->response_headers);
+
+            // Expecting to see another response line next.
+            connp->out_state = htp_connp_RES_LINE;
+            connp->out_tx->response_progress = HTP_RESPONSE_LINE;
+            connp->out_tx->seen_100continue++;
+
+            return HTP_OK;
         }
-
-        htp_table_clear(connp->out_tx->response_headers);
-
-        // Expecting to see another response line next.
-        connp->out_state = htp_connp_RES_LINE;
-        connp->out_tx->response_progress = HTP_RESPONSE_LINE;
-        connp->out_tx->seen_100continue++;
-
-        return HTP_OK;
     }
 
     // A request can indicate it waits for headers validation

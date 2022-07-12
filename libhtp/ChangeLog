@@ -1,4 +1,54 @@
+0.5.40 (21 April 2022)
+----------------------
+
+- uri: optionally allows spaces in uri
+
+- ints: integer handling improvements
+
+- headers: continue on nul byte
+
+- headers: consistent trailing space handling
+
+- list: fix integer overflow
+
+- util: remove unused htp_utf8_decode
+
+- fix 100-continue with CL 0
+
+- lzma: don't do unnecessary realloc
+
+0.5.39 (16 November 2021)
+-------------------------
+
+- host: ipv6 address is a valid host
+
+- util: one char is not always empty line
+
+- test and fuzz improvements
+
+0.5.38 (30 June 2021)
+---------------------
+
+- consume empty lines when parsing chunks to avoid quadratic complexity
+
+- autotools fix for cygwin
+
+0.5.37 (2 March 2021)
+---------------------
+
+- support request body decompression
+
+- several accuracy fixes
+
+- fuzz improvments 
+
+0.5.36 (3 December 2020)
+------------------------
+
+- fix a http pipelining issue (#304, fixed by #312)
+
 0.5.35 (8 October 2020)
+-----------------------
 
 - fix memory leak in tunnel traffoc
 

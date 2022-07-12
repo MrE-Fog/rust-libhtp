@@ -5,7 +5,7 @@ description = "FFI bindings to libhtp"
 edition = "2018"
 license = "BSD-3-Clause"
 build = "build.rs"
-authors = ["The OISF/Suricata Development Team"]
+authors = ["The OISF/Suricata Development Team", "Nethunters Labs"]
 
 [dependencies]
 libc = "0.2"

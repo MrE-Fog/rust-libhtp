@@ -38,6 +38,16 @@
 
 #include "htp_config_auto.h"
 
+//inet_pton
+#if _WIN32
+#include <ws2tcpip.h>
+#else // mac, linux, freebsd
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
+
 #include "htp_private.h"
 
 /**
@@ -219,7 +229,7 @@ int htp_convert_method_to_number(bstr *method) {
  * @return 0 or 1
  */
 int htp_is_line_empty(unsigned char *data, size_t len) {
-    if ((len == 1) ||
+    if (((len == 1) && ((data[0] == CR) || (data[0] == LF))) ||
         ((len == 2) && (data[0] == CR) && (data[1] == LF))) {
         return 1;
     }
@@ -1137,10 +1147,10 @@ void htp_utf8_validate_path(htp_tx_t *tx, bstr *path) {
  * @param[in] data
  * @return decoded byte
  */
-static int decode_u_encoding_path(htp_cfg_t *cfg, htp_tx_t *tx, unsigned char *data) {
-    unsigned int c1 = x2c(data);
-    unsigned int c2 = x2c(data + 2);
-    int r = cfg->decoder_cfgs[HTP_DECODER_URL_PATH].bestfit_replacement_byte;
+static uint8_t decode_u_encoding_path(htp_cfg_t *cfg, htp_tx_t *tx, unsigned char *data) {
+    uint8_t c1 = x2c(data);
+    uint8_t c2 = x2c(data + 2);
+    uint8_t r = cfg->decoder_cfgs[HTP_DECODER_URL_PATH].bestfit_replacement_byte;
 
     if (c1 == 0x00) {
         r = c2;
@@ -1193,9 +1203,9 @@ static int decode_u_encoding_path(htp_cfg_t *cfg, htp_tx_t *tx, unsigned char *d
  * @param[in] data
  * @return decoded byte
  */
-static int decode_u_encoding_params(htp_cfg_t *cfg, enum htp_decoder_ctx_t ctx, unsigned char *data, uint64_t *flags) {
-    unsigned int c1 = x2c(data);
-    unsigned int c2 = x2c(data + 2);
+static uint8_t decode_u_encoding_params(htp_cfg_t *cfg, enum htp_decoder_ctx_t ctx, unsigned char *data, uint64_t *flags) {
+    uint8_t c1 = x2c(data);
+    uint8_t c2 = x2c(data + 2);
 
     // Check for overlong usage first.
     if (c1 == 0) {
@@ -1212,7 +1222,7 @@ static int decode_u_encoding_params(htp_cfg_t *cfg, enum htp_decoder_ctx_t ctx, 
 
     // Use best-fit mapping.
     unsigned char *p = cfg->decoder_cfgs[ctx].bestfit_map;
-    int r = cfg->decoder_cfgs[ctx].bestfit_replacement_byte;
+    uint8_t r = cfg->decoder_cfgs[ctx].bestfit_replacement_byte;
 
     // TODO Optimize lookup.
 
@@ -1257,7 +1267,7 @@ htp_status_t htp_decode_path_inplace(htp_tx_t *tx, bstr *path) {
     int previous_was_separator = 0;
 
     while ((rpos < len) && (wpos < len)) {
-        int c = data[rpos];
+        uint8_t c = data[rpos];
 
         // Decode encoded characters
         if (c == '%') {
@@ -1479,7 +1489,7 @@ htp_status_t htp_decode_path_inplace(htp_tx_t *tx, bstr *path) {
 
         // Lowercase characters, if necessary
         if (cfg->decoder_cfgs[HTP_DECODER_URL_PATH].convert_lowercase) {
-            c = tolower(c);
+            c = (uint8_t) tolower(c);
         }
 
         // If we're compressing separators then we need
@@ -1547,7 +1557,7 @@ htp_status_t htp_urldecode_inplace_ex(htp_cfg_t *cfg, enum htp_decoder_ctx_t ctx
     size_t wpos = 0;
 
     while ((rpos < len) && (wpos < len)) {
-        int c = data[rpos];
+        uint8_t c = data[rpos];
 
         // Decode encoded characters.
         if (c == '%') {
@@ -1947,7 +1957,7 @@ void htp_normalize_uri_path_inplace(bstr *s) {
         // the output buffer, including the initial "/" character (if
         // any) and any subsequent characters up to, but not including,
         // the next "/" character or the end of the input buffer.
-        data[wpos++] = c;
+        data[wpos++] = (uint8_t) c;
 
         while ((rpos < len) && (data[rpos] != '/') && (wpos < len)) {
             data[wpos++] = data[rpos++];
@@ -1976,7 +1986,7 @@ void fprint_bstr(FILE *stream, const char *name, bstr *b) {
  */
 void fprint_raw_data(FILE *stream, const char *name, const void *data, size_t len) {
     // may happen for gaps
-    if (data == NULL && len > 0) {
+    if (data == NULL) {
         fprintf(stream, "\n%s: ptr NULL len %u\n", name, (unsigned int)len);
     } else {
         fprint_raw_data_ex(stream, name, data, 0, len);
@@ -2032,7 +2042,7 @@ void fprint_raw_data_ex(FILE *stream, const char *name, const void *_data, size_
         i = 0;
         char *p = buf + strlen(buf);
         while ((offset + i < len) && (i < 16)) {
-            int c = data[offset + i];
+            uint8_t c = data[offset + i];
 
             if (isprint(c)) {
                 *p++ = c;
@@ -2442,6 +2452,17 @@ int htp_validate_hostname(bstr *hostname) {
 
     if ((len == 0) || (len > 255)) return 0;
 
+    if (data[0] == '[') {
+        // only ipv6 possible
+        if (len < 2 || len - 2 >= INET6_ADDRSTRLEN) {
+            return 0;
+        }
+        char dst[sizeof(struct in6_addr)];
+        char str[INET6_ADDRSTRLEN];
+        memcpy(str, data+1, len-2);
+        str[len-2] = 0;
+        return inet_pton(AF_INET6, str, dst);
+    }
     while (pos < len) {
         // Validate label characters.
         startpos = pos;
